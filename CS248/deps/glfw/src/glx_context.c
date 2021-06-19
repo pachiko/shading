@@ -201,7 +201,7 @@ int _glfwInitContextAPI(void)
     {
         _glfwInputError(GLFW_API_UNAVAILABLE,
                         "GLX: GLX version 1.3 is required");
-        return GL_FALSE;
+        // return GL_FALSE;
     }
 
     if (_glfwPlatformExtensionSupported("GLX_EXT_swap_control"))

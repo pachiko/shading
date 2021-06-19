@@ -11,9 +11,11 @@ uniform bool useMirrorBRDF;         // true if mirror brdf should be used (defau
 //
 // texture maps
 //
-
 uniform sampler2D diffuseTextureSampler;
+uniform sampler2D normalTextureSampler;
+uniform sampler2D environmentTextureSampler;
 
+uniform sampler2DArray shadowTextureSampler;
 
 //
 // lighting environment definition. Scenes may contain directional
@@ -50,10 +52,13 @@ in vec3 dir2camera;   // vector from surface point to camera
 in mat3 tan2world;    // tangent space to world space transform
 in vec3 vertex_diffuse_color; // surface color
 
+in vec4 lightSpacePos[MAX_NUM_LIGHTS]; // Light-space positions
+
 out vec4 fragColor;
 
 #define PI 3.14159265358979323846
 
+#define SMOOTHING 0.1
 
 //
 // Simple diffuse brdf
@@ -78,8 +83,9 @@ vec3 Phong_BRDF(vec3 L, vec3 V, vec3 N, vec3 diffuse_color, vec3 specular_color,
     // TODO CS248: Phong Reflectance
     // Implement diffuse and specular terms of the Phong
     // reflectance model here.
-
-    return diffuse_color;
+	vec3 R = 2. * dot(L, N) * N - L;
+	vec3 spec = specular_color * pow( max(dot(R, V), 0.), specular_exponent);
+    return Diffuse_BRDF(L, N, diffuse_color) + spec;
 }
 
 //
@@ -105,7 +111,11 @@ vec3 SampleEnvironmentMap(vec3 D)
     // (3) How do you convert theta and phi to normalized texture
     //     coordinates in the domain [0,1]^2?
 
-    return vec3(.25, .25, .25);   
+	float theta = acos(D.y);
+	float phi = atan(D.x, D.z);
+	if (phi < 0.0) phi += 2.0*PI; // -PI is NOT 0
+	vec2 coord = vec2(phi/2.0/PI, theta/PI);
+	return texture(environmentTextureSampler, coord).rgb;  
 }
 
 //
@@ -142,7 +152,9 @@ void main(void)
        // In other words:   tangent_space_normal = texture_value * 2.0 - 1.0;
 
        // replace this line with your implementation
-       N = normalize(normal);
+       	vec3 tan_normal = texture(normalTextureSampler, texcoord).rgb;
+	    tan_normal = 2.0*tan_normal - 1.0;
+	    N = normalize(tan2world * tan_normal);
 
     } else {
        N = normalize(normal);
@@ -161,8 +173,7 @@ void main(void)
         // compute perfect mirror reflection direction here.
         // You'll also need to implement environment map sampling in SampleEnvironmentMap()
         //
-        vec3 R = normalize(vec3(1.0));
-
+        vec3 R = reflect(-V, N); // 2.0*dot(V, N)*N - V = -(V + 2.0*dot(V, N)*N); 
 
         // sample environment map
         vec3 envColor = SampleEnvironmentMap(R);
@@ -230,12 +241,39 @@ void main(void)
         //       facing out area.  Smaller values of SMOOTHING will create hard spotlights.
 
         // CS248: remove this once you perform proper attenuation computations
-        intensity = vec3(0.5, 0.5, 0.5);
+        float D = length(dir_to_surface);
+        intensity /= (1.0 + D*D);
 
+        float maxAngle = (1.0 + SMOOTHING)*cone_angle;
+        float minAngle = (1.0 - SMOOTHING)*cone_angle;
+        if (angle > maxAngle) {
+            intensity = vec3(0.0);
+        } else if (angle > minAngle) {
+            intensity *= (maxAngle - angle)/(maxAngle - minAngle);           
+        }
 
         // Render Shadows for all spot lights
-        // CS248 TODO: Shadow Mapping: comute shadowing for spotlight i here 
-
+        // CS248 TODO: Shadow Mapping: comute shadowing for spotlight i here
+        // NB: PCF is much slower since multiple texture look-ups.
+        float pcf_step_size = 256;
+        vec4 position_shadowlight = lightSpacePos[i];
+        int occlusionCount = 0;
+        for (int j = -2; j <= 2; j++) {
+            for (int k = -2; k <= 2; k++) {
+                // sample shadow map at shadow_uv + offset
+                vec2 offset = vec2(j,k) / pcf_step_size;
+                vec3 shadow_uv = position_shadowlight.xyz / position_shadowlight.w; // perspective divide
+                float dist = texture(shadowTextureSampler, vec3(shadow_uv.xy + offset, i)).x; // i = array layer (which spotlight)
+                // and test if the surface is in shadow according to this sample
+                // must be compared after perspective divide (remember that depth map is 0-1) else everything is dark
+                if (dist + 0.005 < shadow_uv.z) {
+                    occlusionCount++; 
+                }
+            }
+        }
+        // record the fraction (out of 25) of shadow tests that are in shadow
+        // and attenuate illumination accordingly       
+        intensity *= (1.0 - occlusionCount/25.0);
 
 	    vec3 L = normalize(-spot_light_directions[i]);
 		vec3 brdf_color = Phong_BRDF(L, V, N, diffuseColor, specularColor, specularExponent);

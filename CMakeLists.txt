@@ -157,6 +157,7 @@ endif(WIN32)
 #-------------------------------------------------------------------------------
 # Find dependencies
 #-------------------------------------------------------------------------------
+cmake_policy(SET CMP0072 NEW)
 
 # Required packages
 find_package(OpenGL REQUIRED)

@@ -16,7 +16,7 @@ namespace {
 
 Matrix4x4 createPerspectiveMatrix(float fovy, float aspect, float near, float far) {
 
-  float f = 1.0 / tan(radians(fovy)/2.0);
+  float f = 1.0 / tan(radians(fovy)/2.0); // focal length. h/2 = 1.
 
   Matrix4x4 m;
   m[0][0] = f / aspect;
@@ -46,9 +46,24 @@ Matrix4x4 createWorldToCameraMatrix(const Vector3D& eye, const Vector3D& at, con
 
   // TODO CS248: Camera Matrix
   // Compute the matrix that transforms a point in world space to a point in camera space.
+	Vector3D w = (at - eye).unit();
+	Vector3D u = cross(w, up.unit()).unit();
+	Vector3D v = cross(u, w).unit();
+	
+	Matrix3x3 rot;
+	rot[0] = u;
+	rot[1] = v;
+	rot[2] = -w;
+	rot = rot.T();
 
-  return Matrix4x4::translation(Vector3D(-20,0,-150));
+	Matrix4x4 w2c;
+	w2c[0] = Vector4D(rot[0], 0);
+	w2c[1] = Vector4D(rot[1], 0);
+	w2c[2] = Vector4D(rot[2], 0);
+	w2c[3] = Vector4D(Vector3D(), 1);
+	w2c = w2c*Matrix4x4::translation(-eye);
 
+	return w2c;
 }
 
 // Creates two triangles (6 positions, 18 floats) making up a square
@@ -266,8 +281,25 @@ void Scene::renderShadowPass(int shadowedLightIndex) {
     //       drawTriangles();  //  <- Framebuffer 100 is bound, since fb_bind is still alive here.
     // 
     // Replaces the following lines with correct implementation.
-    Matrix4x4 worldToLightNDC = Matrix4x4::identity();
-    worldToShadowLight_[shadowedLightIndex].zero();
+
+    // (1) bind to correct frame buffer, given the light index
+    FrameBufferId bufID = shadowFrameBufferId_[shadowedLightIndex];
+    auto fb_bind = gl_mgr_->bindFrameBuffer(bufID);
+
+    // (2) worldToLightNDC: light as a camera
+    Vector3D up(0, 1 ,0);
+    Matrix4x4 worldToLight = createWorldToCameraMatrix(lightPos, lightPos + lightDir, up); // ModelViewMatrix
+    Matrix4x4 proj = createPerspectiveMatrix(fovy, aspect, near , far);
+    Matrix4x4 worldToLightNDC = proj*worldToLight; // Projection matrix.
+
+    // (3) worldToShadowLight: like (2), but for textures
+    // ie. [-w, w] -> [0, w] in View Space; [-1, 1] -> [0, 1] in NDC Space (after perspective divide)
+    // w = -z in this case?
+    Matrix4x4 addScale = Matrix4x4::scaling(Vector3D(0.5));
+    addScale[3] = Vector4D(0.5, 1);
+
+    Matrix4x4 worldToShadowLight = addScale*worldToLightNDC;
+    worldToShadowLight_[shadowedLightIndex] = worldToShadowLight;
 
     glViewport(0, 0, shadowTextureSize_, shadowTextureSize_);
 
