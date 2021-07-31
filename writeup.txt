@@ -7,9 +7,9 @@ so to get the camera's lookAt, we need to minus the camera pos. This was differe
 -forgot to do that when creating world2ShadowLight matrices as well.
 
 -Turns out model view matrices are world2X matrices. Model-view-projection (MVP) matrices are:
-PerspectiveProjection * world2X
+PerspectiveProjection * World2View * Model2World. (but not yet homogenize)
 
--world2LightNDC (aka MVP for shadow-casting lights) are in OpenGL NDC [-1, 1] after perpsective divide
+-world2LightNDC (aka MVP for shadow-casting lights) are in OpenGL NDC [-1, 1] (after perspective divide from clip space [-w, w])
 and we needed to make them [0, 1] for shadow texture look-up. Made a mistake of division here,
 should just use w (by setting component of w to 1) and scale by 0.5. Remember to concat with world2LightNDC!
 
