@@ -293,7 +293,7 @@ void Scene::renderShadowPass(int shadowedLightIndex) {
     Matrix4x4 worldToLightNDC = proj*worldToLight; // Projection matrix.
 
     // (3) worldToShadowLight: like (2), but for textures
-    // ie. [-w, w] -> [0, w] in View Space; [-1, 1] -> [0, 1] in NDC Space (after perspective divide)
+    // ie. [-w, w] -> [0, w] in Clip Space; [-1, 1] -> [0, 1] in NDC/Screen Space (after perspective divide)
     // w = -z in this case?
     Matrix4x4 addScale = Matrix4x4::scaling(Vector3D(0.5));
     addScale[3] = Vector4D(0.5, 1);
